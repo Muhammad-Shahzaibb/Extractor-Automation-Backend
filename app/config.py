@@ -45,6 +45,17 @@ class Settings(BaseSettings):
         alias="REFRESH_TOKEN_EXPIRE_DAYS",
     )
 
+    # Bootstrap admin — created once on startup if this email is missing
+    seed_admin_email: str = Field(
+        default="Admin@qbsco.net",
+        alias="SEED_ADMIN_EMAIL",
+    )
+    seed_admin_password: str = Field(
+        default="Admin@123",
+        alias="SEED_ADMIN_PASSWORD",
+    )
+    seed_admin_name: str = Field(default="QBS Admin", alias="SEED_ADMIN_NAME")
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

@@ -14,13 +14,17 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-Edit `.env` (`DATABASE_URL`, `JWT_SECRET_KEY`).
+Edit `.env` (`DATABASE_URL`, `JWT_SECRET_KEY`, `SEED_ADMIN_*`).
 
 ## Run
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+On startup the API creates tables (if missing) and **seeds one admin** from
+`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` / `SEED_ADMIN_NAME` **only if** that
+email is not already in the database. Later restarts do not reset the password.
 
 Docs: http://localhost:8000/docs
 

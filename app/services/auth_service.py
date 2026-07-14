@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models.session import AuthSession
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.security.jwt import TokenError, create_access_token, create_refresh_token, decode_token
-from app.security.passwords import verify_password
+from app.security.passwords import hash_password, verify_password
 from app.security.tokens import hash_token
 
 
@@ -174,3 +174,21 @@ def get_valid_session(db: Session, session_id: str) -> AuthSession:
             detail="Session invalid or expired",
         )
     return session
+
+
+def seed_admin_if_needed(db: Session) -> None:
+    """Create the bootstrap admin once if SEED_ADMIN_EMAIL is not in the DB."""
+    settings = get_settings()
+    email = settings.seed_admin_email.lower().strip()
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        return
+    admin = User(
+        email=email,
+        full_name=settings.seed_admin_name,
+        hashed_password=hash_password(settings.seed_admin_password),
+        role=UserRole.admin,
+        is_active=True,
+    )
+    db.add(admin)
+    db.commit()
