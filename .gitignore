@@ -1,0 +1,16 @@
+.env
+.env.example
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+storage/uploads/*/
+storage/outputs/*/
+storage/*.db
+!storage/uploads/.gitkeep
+!storage/outputs/.gitkeep
+Data/
+Output/
+*.xlsx
+.DS_Store
