@@ -568,7 +568,8 @@ Product flow:
 
 1. Upload docs → **parse**  
 2. Show `columns` to user for selection  
-3. Call **excel** with chosen columns → file download  
+3. Call **preview** whenever selection changes (optional; UI can also use `records` from parse)  
+4. Call **excel** with chosen columns → file download  
 
 Uploaded `.docx` files are parsed in a temporary folder and discarded.  
 Excel is streamed in the response (not saved on the server).  
@@ -684,7 +685,73 @@ Files over the size limit are counted as failed entries inside `errors` (when ot
 
 ---
 
-### 7.2 `POST /api/v1/extract/excel`
+### 7.2 `POST /api/v1/extract/preview`
+
+**Purpose:** Return a table preview for the currently selected physical columns.  
+Safe to call every time the user toggles checkboxes — **does not** clear the run (unlike excel download).
+
+#### Headers
+
+| Header | Required |
+|--------|----------|
+| `Authorization: Bearer <access_token>` | Yes |
+| `Content-Type` | `application/json` |
+
+#### Body
+
+| Field | Type | Required | Rules |
+|-------|------|----------|-------|
+| `run_id` | string (UUID) | Yes | From parse |
+| `selected_columns` | string[] | Yes | Min 1; each must be in parse `columns` |
+
+```json
+{
+  "run_id": "35c07951-aaaa-bbbb-cccc-dddddddddddd",
+  "selected_columns": ["Grammage", "Thickness"]
+}
+```
+
+#### Success — `200 OK`
+
+```json
+{
+  "run_id": "35c07951-aaaa-bbbb-cccc-dddddddddddd",
+  "selected_columns": ["Grammage", "Thickness"],
+  "total_rows": 2,
+  "rows": [
+    {
+      "file": "spec1.docx",
+      "SpecNo": "CFP1602",
+      "Client": "Example Client",
+      "Quality": "...",
+      "Grade": "...",
+      "MatCode": "...",
+      "Color": "...",
+      "Ply": "2",
+      "params": {
+        "Grammage": { "Min": "15", "Tar": "16", "Max": "17", "Unit": "g/m2" },
+        "Thickness": { "Min": "1", "Tar": "1.1", "Max": "1.2", "Unit": "mm" }
+      }
+    }
+  ]
+}
+```
+
+Only the requested `selected_columns` appear under `params`. Missing values are empty strings.
+
+#### Errors
+
+| Status | `detail` | Cause |
+|--------|----------|-------|
+| `400` | `Select at least one column` | Empty list |
+| `400` | `Unknown columns: [...]` | Not in this run |
+| `404` | `Run not found or expired — upload and parse again` | Bad/expired/`run_id` |
+| `401` / `403` | auth | — |
+| `422` | validation | Missing fields |
+
+---
+
+### 7.3 `POST /api/v1/extract/excel`
 
 **Purpose:** Build Excel from a previous parse and **download** it.
 
@@ -842,7 +909,7 @@ Base path: `/api/v1/dashboard`
 
 ## 9. Typical frontend flows
 
-### A. Login → extract → download
+### A. Login → extract → preview → download
 
 ```
 POST /api/v1/auth/login
@@ -851,6 +918,11 @@ POST /api/v1/auth/login
 POST /api/v1/extract/parse  (multipart files)
   → show columns[] as checkboxes
   → keep run_id
+
+On every column selection change:
+POST /api/v1/extract/preview
+  { run_id, selected_columns }
+  → render table from rows[]
 
 POST /api/v1/extract/excel
   { run_id, selected_columns }
@@ -903,6 +975,7 @@ GET  /api/v1/dashboard/admin
 | PATCH | `/api/v1/users/{user_id}/active` | Admin |
 | POST | `/api/v1/users/{user_id}/reset-password` | Admin |
 | POST | `/api/v1/extract/parse` | User |
+| POST | `/api/v1/extract/preview` | User |
 | POST | `/api/v1/extract/excel` | User |
 | GET | `/api/v1/dashboard/user` | User |
 | GET | `/api/v1/dashboard/admin` | Admin |

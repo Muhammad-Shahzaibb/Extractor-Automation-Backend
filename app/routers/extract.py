@@ -8,7 +8,14 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import get_current_user
 from app.models.user import User
-from app.schemas import ExcelRequest, ParseErrorOut, ParseResponse, RecordOut
+from app.schemas import (
+    ExcelRequest,
+    ParseErrorOut,
+    ParseResponse,
+    PreviewRequest,
+    PreviewResponse,
+    RecordOut,
+)
 from app.services import extract_service
 
 router = APIRouter(
@@ -37,6 +44,19 @@ async def parse_documents(
         errors=[ParseErrorOut(file=f, message=m) for f, m in cached.errors],
         records=[RecordOut.model_validate(r) for r in cached.records],
     )
+
+
+@router.post("/preview", response_model=PreviewResponse)
+def preview_excel(
+    body: PreviewRequest,
+    user: User = Depends(get_current_user),
+) -> PreviewResponse:
+    """
+    Preview table for the currently selected columns.
+    Call again whenever the user changes column selection (does not clear the run).
+    """
+    data = extract_service.build_preview(user.id, body.run_id, body.selected_columns)
+    return PreviewResponse.model_validate(data)
 
 
 @router.post("/excel")

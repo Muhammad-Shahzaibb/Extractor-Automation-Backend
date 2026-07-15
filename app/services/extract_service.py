@@ -180,3 +180,58 @@ def build_excel_bytes(
         db.commit()
 
     return data, "Specifications_Combined.xlsx", cached
+
+
+def build_preview(
+    user_id: str,
+    run_id: str,
+    selected_columns: list[str],
+) -> dict:
+    """Return table rows for selected columns without consuming the cached run."""
+    cached = run_cache.get(run_id, user_id)
+    if not selected_columns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select at least one column",
+        )
+    unknown = [c for c in selected_columns if c not in cached.columns]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown columns: {unknown}",
+        )
+
+    rows = []
+    for rec in cached.records:
+        params = {}
+        for col in selected_columns:
+            p = rec.get("params", {}).get(col)
+            if p:
+                params[col] = {
+                    "Min": p.get("Min", ""),
+                    "Tar": p.get("Tar", ""),
+                    "Max": p.get("Max", ""),
+                    "Unit": p.get("Unit", ""),
+                }
+            else:
+                params[col] = {"Min": "", "Tar": "", "Max": "", "Unit": ""}
+        rows.append(
+            {
+                "file": rec.get("file", ""),
+                "SpecNo": rec.get("SpecNo", ""),
+                "Client": rec.get("Client", ""),
+                "Quality": rec.get("Quality", ""),
+                "Grade": rec.get("Grade", ""),
+                "MatCode": rec.get("MatCode", ""),
+                "Color": rec.get("Color", ""),
+                "Ply": rec.get("Ply", ""),
+                "params": params,
+            }
+        )
+
+    return {
+        "run_id": run_id,
+        "selected_columns": selected_columns,
+        "total_rows": len(rows),
+        "rows": rows,
+    }

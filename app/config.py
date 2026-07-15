@@ -16,10 +16,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    cors_origins: str = Field(
-        default="http://localhost:3000,http://localhost:5173",
-        alias="CORS_ORIGINS",
-    )
     storage_root: Path = Field(
         default=BASE_DIR / "storage",
         alias="STORAGE_ROOT",
@@ -55,10 +51,6 @@ class Settings(BaseSettings):
         alias="SEED_ADMIN_PASSWORD",
     )
     seed_admin_name: str = Field(default="QBS Admin", alias="SEED_ADMIN_NAME")
-
-    @property
-    def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def max_upload_bytes(self) -> int:

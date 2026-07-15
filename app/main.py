@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
 from app.db import SessionLocal, init_db
 from app.routers import auth, dashboard, extract, health, users
 from app.services.auth_service import seed_admin_if_needed
@@ -28,7 +27,6 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    settings = get_settings()
     application = FastAPI(
         title="Paper Specification Extractor API",
         description=(
@@ -40,8 +38,8 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

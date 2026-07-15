@@ -118,6 +118,30 @@ class ExcelRequest(BaseModel):
     filename: str = "Specifications_Combined.xlsx"
 
 
+class PreviewRequest(BaseModel):
+    run_id: str
+    selected_columns: list[str] = Field(min_length=1)
+
+
+class PreviewRow(BaseModel):
+    file: str
+    SpecNo: str = ""
+    Client: str = ""
+    Quality: str = ""
+    Grade: str = ""
+    MatCode: str = ""
+    Color: str = ""
+    Ply: str = ""
+    params: dict[str, ParamValues] = Field(default_factory=dict)
+
+
+class PreviewResponse(BaseModel):
+    run_id: str
+    selected_columns: list[str]
+    total_rows: int
+    rows: list[PreviewRow]
+
+
 # ---- Dashboard ----
 
 

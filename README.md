@@ -34,7 +34,7 @@ Full written API reference (request/response/errors): see [API.md](API.md).
 
 1. `POST /api/v1/auth/login` → get access token  
 2. `POST /api/v1/extract/parse` (multipart `.docx` files) → `run_id` + unique `columns`  
-3. User picks columns in the UI  
+3. User picks columns in the UI; optionally `POST /api/v1/extract/preview` when selection changes  
 4. `POST /api/v1/extract/excel` `{ run_id, selected_columns }` → Excel download  
 
 Uploaded files are parsed in a temp folder and deleted. Excel is streamed;
