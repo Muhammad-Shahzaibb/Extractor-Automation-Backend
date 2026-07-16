@@ -1,9 +1,18 @@
 """
 extractor.py
 ------------
-Orchestrates reading a folder of .docx specification sheets into a list
-of plain-dict "records" ready for the Excel builder, plus the dynamic,
-ordered list of physical-spec columns actually found across all of them.
+Orchestrates reading a folder of .docx/.pdf specification sheets into a
+list of plain-dict "records" ready for the Excel builder, plus the
+dynamic, ordered list of physical-spec columns actually found across all
+of them.
+
+.docx and .pdf sources are read by two different low-level readers
+(docx_reader.py / pdf_reader.py), but both readers produce the exact same
+"tables" shape -- a list of tables, each a list of rows, each row a list
+of cell-text strings. Everything below this point (find_table_index,
+find_cell_with_label, find_spec_no, classify_label, parse_physical_specs)
+operates on that shared shape and doesn't know or care which file format
+it came from.
 
 Public API:
     parse_file(path)              -> record dict for one document
@@ -13,7 +22,9 @@ Public API:
 import os
 import glob
 
-from .docx_reader import load_document, find_table_index, find_cell_with_label, find_spec_no, clean
+from .docx_reader import find_table_index, find_cell_with_label, find_spec_no, clean
+from .docx_reader import load_document as load_document_docx
+from .pdf_reader import load_document as load_document_pdf
 from .classifier import classify_label, order_columns, SINGLE_VALUE_COLUMNS
 from .value_utils import to_number_or_text, leading_number
 
@@ -104,8 +115,11 @@ def parse_physical_specs(tables):
     
 
 def parse_file(path):
-    """Parse a single .docx spec sheet into a record dict."""
-    doc, tables = load_document(path)
+    """Parse a single .docx or .pdf spec sheet into a record dict."""
+    if path.lower().endswith(".pdf"):
+        _, tables = load_document_pdf(path)
+    else:
+        _, tables = load_document_docx(path)
 
     record = {"file": os.path.basename(path), "SpecNo": find_spec_no(tables)}
     for field_name, candidate_labels in IDENTITY_FIELDS:
@@ -120,9 +134,9 @@ def parse_file(path):
     return record
 
 
-def parse_folder(folder_path, pattern="*.docx"):
+def parse_folder(folder_path, patterns=("*.docx", "*.pdf")):
     """
-    Parse every .docx file directly inside folder_path.
+    Parse every .docx/.pdf file directly inside folder_path.
 
     Returns:
         records: list of record dicts (one per successfully parsed file)
@@ -131,10 +145,16 @@ def parse_folder(folder_path, pattern="*.docx"):
             of the parsed files
         errors: list of (filename, error_message) for files that failed
     """
-    files = sorted(glob.glob(os.path.join(folder_path, pattern)))
-    # Also catch files nested one level deep (e.g. a zip extracted with a
-    # single wrapping folder), without recursing arbitrarily deep.
-    files += sorted(glob.glob(os.path.join(folder_path, "*", pattern)))
+    if isinstance(patterns, str):
+        patterns = (patterns,)
+
+    files = []
+    for pattern in patterns:
+        files += glob.glob(os.path.join(folder_path, pattern))
+        # Also catch files nested one level deep (e.g. a zip extracted
+        # with a single wrapping folder), without recursing arbitrarily deep.
+        files += glob.glob(os.path.join(folder_path, "*", pattern))
+    files = sorted(set(files))
     files = [f for f in files if not os.path.basename(f).startswith("~$")]  # skip Word lock files
 
     records = []

@@ -1,4 +1,4 @@
-"""Parse uploaded .docx bytes in a temp dir (deleted afterward) and build Excel."""
+"""Parse uploaded .docx/.pdf bytes in a temp dir (deleted afterward) and build Excel."""
 
 from __future__ import annotations
 
@@ -18,15 +18,19 @@ from app.models.run import ExtractionRun
 from app.services.run_cache import CachedRun, run_cache
 
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._\- ]+")
+ALLOWED_EXTENSIONS = (".docx", ".pdf")
 
 
 def _safe_filename(name: str) -> str:
     base = Path(name or "upload.docx").name.strip()
     cleaned = SAFE_NAME.sub("_", base).strip(" ._") or "upload.docx"
-    if not cleaned.lower().endswith(".docx"):
+    lower = cleaned.lower()
+    if not lower.endswith(ALLOWED_EXTENSIONS):
+        # Preserve the original extension's intent where possible; default
+        # to .docx only when we truly can't tell (e.g. no extension at all).
         cleaned += ".docx"
     if cleaned.startswith("~$"):
-        return ""
+        return ""  # Word lock file
     return cleaned
 
 
@@ -40,7 +44,7 @@ async def parse_uploads(
     if not files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Upload at least one .docx file",
+            detail="Upload at least one .docx or .pdf file",
         )
 
     started = time.perf_counter()
@@ -63,8 +67,10 @@ async def parse_uploads(
             if len(data) > max_bytes:
                 errors.append((original, "File exceeds size limit"))
                 continue
-            if not original.lower().endswith(".docx") and not safe.lower().endswith(".docx"):
-                errors.append((original, "Only .docx files are allowed"))
+            if not original.lower().endswith(ALLOWED_EXTENSIONS) and not safe.lower().endswith(
+                ALLOWED_EXTENSIONS
+            ):
+                errors.append((original, "Only .docx and .pdf files are allowed"))
                 continue
 
             path = tmp_path / safe
