@@ -568,10 +568,11 @@ Product flow:
 
 1. Upload docs → **parse**  
 2. Show `columns` to user for selection  
-3. Call **preview** whenever selection changes (optional; UI can also use `records` from parse)  
-4. Call **excel** with chosen columns → file download  
+3. Call **preview** whenever selection changes  
+4. Optionally **remove rows** by `row_id` so they disappear from preview and Excel  
+5. Call **excel** with chosen columns → file download (remaining rows only)  
 
-Uploaded `.docx` files are parsed in a temporary folder and discarded.  
+Uploaded `.docx` / `.pdf` files are parsed in a temporary folder and discarded.  
 Excel is streamed in the response (not saved on the server).  
 Only run **statistics** are stored in the database.
 
@@ -579,7 +580,7 @@ Only run **statistics** are stored in the database.
 
 ### 7.1 `POST /api/v1/extract/parse`
 
-**Purpose:** Upload one or more `.docx` files, parse them, return unique physical-spec columns and records.
+**Purpose:** Upload one or more `.docx` or `.pdf` files, parse them, return unique physical-spec columns and records.
 
 #### Headers
 
@@ -592,7 +593,7 @@ Only run **statistics** are stored in the database.
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `files` | file[] | Yes | One or more `.docx` parts with the **same field name** `files` |
+| `files` | file[] | Yes | One or more `.docx` / `.pdf` parts with the **same field name** `files` |
 
 Max size per file: `MAX_UPLOAD_MB` (default **25 MB**).
 
@@ -602,7 +603,7 @@ Max size per file: `MAX_UPLOAD_MB` (default **25 MB**).
 curl -X POST http://localhost:8000/api/v1/extract/parse ^
   -H "Authorization: Bearer ACCESS_TOKEN" ^
   -F "files=@spec1.docx" ^
-  -F "files=@spec2.docx"
+  -F "files=@spec2.pdf"
 ```
 
 #### Success — `200 OK`
@@ -663,7 +664,7 @@ curl -X POST http://localhost:8000/api/v1/extract/parse ^
 
 | Status | `detail` | Cause |
 |--------|----------|-------|
-| `400` | `Upload at least one .docx file` | Empty upload |
+| `400` | `Upload at least one .docx or .pdf file` | Empty upload |
 | `400` | object with `message` + `errors` | **No** file parsed successfully |
 | `401` / `403` | auth | — |
 | `422` | validation | Missing `files` field |
@@ -687,8 +688,9 @@ Files over the size limit are counted as failed entries inside `errors` (when ot
 
 ### 7.2 `POST /api/v1/extract/preview`
 
-**Purpose:** Return a table preview for the currently selected physical columns.  
-Safe to call every time the user toggles checkboxes — **does not** clear the run (unlike excel download).
+**Purpose:** Return a table preview for the currently selected physical columns  
+(**remaining rows only** after any removals).  
+Safe to call every time the user toggles checkboxes — **does not** clear the run.
 
 #### Headers
 
@@ -702,7 +704,7 @@ Safe to call every time the user toggles checkboxes — **does not** clear the r
 | Field | Type | Required | Rules |
 |-------|------|----------|-------|
 | `run_id` | string (UUID) | Yes | From parse |
-| `selected_columns` | string[] | Yes | Min 1; each must be in parse `columns` |
+| `selected_columns` | string[] | Yes | Min 1 |
 
 ```json
 {
@@ -720,6 +722,7 @@ Safe to call every time the user toggles checkboxes — **does not** clear the r
   "total_rows": 2,
   "rows": [
     {
+      "row_id": "a1b2c3d4-....",
       "file": "spec1.docx",
       "SpecNo": "CFP1602",
       "Client": "Example Client",
@@ -737,21 +740,49 @@ Safe to call every time the user toggles checkboxes — **does not** clear the r
 }
 ```
 
-Only the requested `selected_columns` appear under `params`. Missing values are empty strings.
-
-#### Errors
-
-| Status | `detail` | Cause |
-|--------|----------|-------|
-| `400` | `Select at least one column` | Empty list |
-| `400` | `Unknown columns: [...]` | Not in this run |
-| `404` | `Run not found or expired — upload and parse again` | Bad/expired/`run_id` |
-| `401` / `403` | auth | — |
-| `422` | validation | Missing fields |
+Use each row’s `row_id` when calling **rows/remove**.
 
 ---
 
-### 7.3 `POST /api/v1/extract/excel`
+### 7.3 `POST /api/v1/extract/rows/remove`
+
+**Purpose:** Remove one or more preview rows from the current run.  
+After this, **preview** and **excel** both use only the remaining rows (not the originally parsed full set).
+
+#### Body
+
+```json
+{
+  "run_id": "35c07951-aaaa-bbbb-cccc-dddddddddddd",
+  "row_ids": ["a1b2c3d4-....", "e5f6...."]
+}
+```
+
+#### Success — `200 OK`
+
+```json
+{
+  "run_id": "35c07951-aaaa-bbbb-cccc-dddddddddddd",
+  "removed_count": 1,
+  "remaining_count": 1,
+  "remaining_row_ids": ["e5f6...."],
+  "columns": ["Grammage", "Thickness"]
+}
+```
+
+`columns` is refreshed from remaining rows — update checkboxes if needed, then call preview again.
+
+#### Errors
+
+| Status | `detail` |
+|--------|----------|
+| `400` | empty `row_ids` |
+| `404` | run missing/expired, or none of the `row_ids` found |
+| `401` / `403` | auth |
+
+---
+
+### 7.4 `POST /api/v1/extract/excel`
 
 **Purpose:** Build Excel from a previous parse and **download** it.
 
@@ -922,11 +953,16 @@ POST /api/v1/extract/parse  (multipart files)
 On every column selection change:
 POST /api/v1/extract/preview
   { run_id, selected_columns }
-  → render table from rows[]
+  → render table from rows[] (each row has row_id)
+
+When user removes a row from preview:
+POST /api/v1/extract/rows/remove
+  { run_id, row_ids: ["..."] }
+  → then call preview again
 
 POST /api/v1/extract/excel
   { run_id, selected_columns }
-  → trigger browser file download from binary response
+  → Excel contains only remaining rows
 ```
 
 ### B. Token refresh
@@ -976,6 +1012,7 @@ GET  /api/v1/dashboard/admin
 | POST | `/api/v1/users/{user_id}/reset-password` | Admin |
 | POST | `/api/v1/extract/parse` | User |
 | POST | `/api/v1/extract/preview` | User |
+| POST | `/api/v1/extract/rows/remove` | User |
 | POST | `/api/v1/extract/excel` | User |
 | GET | `/api/v1/dashboard/user` | User |
 | GET | `/api/v1/dashboard/admin` | Admin |

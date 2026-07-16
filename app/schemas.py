@@ -86,6 +86,7 @@ class ParamValues(BaseModel):
 
 
 class RecordOut(BaseModel):
+    row_id: str = ""
     file: str
     SpecNo: str = ""
     Client: str = ""
@@ -124,6 +125,7 @@ class PreviewRequest(BaseModel):
 
 
 class PreviewRow(BaseModel):
+    row_id: str
     file: str
     SpecNo: str = ""
     Client: str = ""
@@ -140,6 +142,22 @@ class PreviewResponse(BaseModel):
     selected_columns: list[str]
     total_rows: int
     rows: list[PreviewRow]
+
+
+class RemoveRowsRequest(BaseModel):
+    run_id: str
+    row_ids: list[str] = Field(min_length=1, description="row_id values from preview")
+
+
+class RemoveRowsResponse(BaseModel):
+    run_id: str
+    removed_count: int
+    remaining_count: int
+    remaining_row_ids: list[str]
+    columns: list[str] = Field(
+        default_factory=list,
+        description="Physical columns still present on remaining rows",
+    )
 
 
 # ---- Dashboard ----

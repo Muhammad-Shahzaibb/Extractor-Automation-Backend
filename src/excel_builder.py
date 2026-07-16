@@ -5,7 +5,7 @@ Builds the final, formatted Excel workbook from parsed records: one row
 per source document, with a two-row header (parameter name spanning
 Min/Target/Max sub-columns), matching the layout used in prior manual
 deliverables. Columns are whatever the caller selects (e.g. via the
-Streamlit checkboxes), so a file lacking a given parameter simply gets
+API selected_columns list), so a file lacking a given parameter simply gets
 blank cells in that row for it.
 """
 
@@ -44,7 +44,7 @@ def build_workbook(records, selected_columns, sort_by="SpecNo"):
 
     records: list of record dicts from extractor.parse_folder
     selected_columns: ordered list of canonical parameter names to include
-        (e.g. from the Streamlit checkboxes) -- a subset of, or equal to,
+        (e.g. from the API selected_columns list) -- a subset of, or equal to,
         the full dynamically-discovered column set
     sort_by: record key to sort rows by (falls back to filename as a
         secondary key so duplicate spec numbers stay in a stable order)

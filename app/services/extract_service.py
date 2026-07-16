@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -26,12 +27,17 @@ def _safe_filename(name: str) -> str:
     cleaned = SAFE_NAME.sub("_", base).strip(" ._") or "upload.docx"
     lower = cleaned.lower()
     if not lower.endswith(ALLOWED_EXTENSIONS):
-        # Preserve the original extension's intent where possible; default
-        # to .docx only when we truly can't tell (e.g. no extension at all).
         cleaned += ".docx"
     if cleaned.startswith("~$"):
-        return ""  # Word lock file
+        return ""
     return cleaned
+
+
+def _refresh_columns(records: list[dict]) -> list[str]:
+    discovered: set[str] = set()
+    for rec in records:
+        discovered.update(rec.get("params", {}).keys())
+    return order_columns(discovered)
 
 
 async def parse_uploads(
@@ -59,7 +65,7 @@ async def parse_uploads(
             original = upload.filename or "upload.docx"
             safe = _safe_filename(original)
             if not safe:
-                errors.append((original, "Invalid or temporary Word lock file"))
+                errors.append((original, "Invalid or temporary file"))
                 continue
 
             data = await upload.read()
@@ -74,7 +80,6 @@ async def parse_uploads(
                 continue
 
             path = tmp_path / safe
-            # Avoid collisions
             if path.exists():
                 path = tmp_path / f"{path.stem}_{files_total}{path.suffix}"
             path.write_bytes(data)
@@ -82,12 +87,12 @@ async def parse_uploads(
             try:
                 record = parse_file(str(path))
                 record["file"] = Path(original).name
+                record["row_id"] = str(uuid.uuid4())
                 records.append(record)
                 discovered.update(record.get("params", {}).keys())
             except Exception as exc:  # noqa: BLE001
                 errors.append((Path(original).name, str(exc)))
 
-    # Temp dir is gone — nothing kept on disk
     files_ok = len(records)
     files_failed = len(errors)
     elapsed = round(time.perf_counter() - started, 3)
@@ -142,6 +147,39 @@ async def parse_uploads(
     return cached
 
 
+def remove_rows(user_id: str, run_id: str, row_ids: list[str]) -> dict:
+    """Drop selected rows from the cached run so preview/excel both exclude them."""
+    cached = run_cache.get(run_id, user_id)
+    wanted = {rid for rid in row_ids if rid}
+    if not wanted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide at least one row_id to remove",
+        )
+
+    before = len(cached.records)
+    remaining = [r for r in cached.records if r.get("row_id") not in wanted]
+    removed = before - len(remaining)
+    if removed == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="None of the given row_ids were found in this run",
+        )
+
+    cached.records = remaining
+    cached.files_ok = len(remaining)
+    cached.columns = _refresh_columns(remaining)
+    run_cache.put(cached)
+
+    return {
+        "run_id": run_id,
+        "removed_count": removed,
+        "remaining_count": len(remaining),
+        "remaining_row_ids": [r.get("row_id", "") for r in remaining],
+        "columns": cached.columns,
+    }
+
+
 def build_excel_bytes(
     db: Session,
     user_id: str,
@@ -149,20 +187,26 @@ def build_excel_bytes(
     selected_columns: list[str],
 ) -> tuple[bytes, str, CachedRun]:
     cached = run_cache.get(run_id, user_id)
-    unknown = [c for c in selected_columns if c not in cached.columns]
-    if unknown:
+    if not cached.records:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown columns: {unknown}",
+            detail="No rows left to export — parse again",
         )
     if not selected_columns:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Select at least one column",
         )
+    # Only export columns that still exist on remaining rows
+    export_columns = [c for c in selected_columns if c in cached.columns]
+    if not export_columns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="None of the selected columns remain after row removal",
+        )
 
     try:
-        wb = build_workbook(cached.records, selected_columns)
+        wb = build_workbook(cached.records, export_columns)
         data = workbook_to_bytes(wb)
     except Exception as exc:  # noqa: BLE001
         row = db.query(ExtractionRun).filter(ExtractionRun.id == run_id).first()
@@ -200,17 +244,16 @@ def build_preview(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Select at least one column",
         )
-    unknown = [c for c in selected_columns if c not in cached.columns]
-    if unknown:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown columns: {unknown}",
-        )
+
+    # Keep FE-selected columns that still exist; ignore ones only on removed rows
+    preview_columns = [c for c in selected_columns if c in cached.columns]
+    if not preview_columns and cached.records:
+        preview_columns = list(cached.columns)
 
     rows = []
     for rec in cached.records:
         params = {}
-        for col in selected_columns:
+        for col in preview_columns:
             p = rec.get("params", {}).get(col)
             if p:
                 params[col] = {
@@ -223,6 +266,7 @@ def build_preview(
                 params[col] = {"Min": "", "Tar": "", "Max": "", "Unit": ""}
         rows.append(
             {
+                "row_id": rec.get("row_id", ""),
                 "file": rec.get("file", ""),
                 "SpecNo": rec.get("SpecNo", ""),
                 "Client": rec.get("Client", ""),
@@ -237,7 +281,7 @@ def build_preview(
 
     return {
         "run_id": run_id,
-        "selected_columns": selected_columns,
+        "selected_columns": preview_columns,
         "total_rows": len(rows),
         "rows": rows,
     }

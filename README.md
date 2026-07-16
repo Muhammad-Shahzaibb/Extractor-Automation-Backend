@@ -1,6 +1,6 @@
 # Paper Specification Extractor API
 
-Upload Word (`.docx`) paper-spec sheets → pick physical columns → download Excel.
+Upload Word (`.docx`) or PDF (`.pdf`) paper-spec sheets → pick physical columns → download Excel.
 Nothing is stored on disk long-term. JWT auth with **admin** / **user** roles.
 
 ## Setup
@@ -33,9 +33,10 @@ Full written API reference (request/response/errors): see [API.md](API.md).
 ## Product flow
 
 1. `POST /api/v1/auth/login` → get access token  
-2. `POST /api/v1/extract/parse` (multipart `.docx` files) → `run_id` + unique `columns`  
-3. User picks columns in the UI; optionally `POST /api/v1/extract/preview` when selection changes  
-4. `POST /api/v1/extract/excel` `{ run_id, selected_columns }` → Excel download  
+2. `POST /api/v1/extract/parse` (multipart `.docx` / `.pdf` files) → `run_id` + unique `columns`  
+3. User picks columns; `POST /api/v1/extract/preview` when selection changes  
+4. Optionally remove rows: `POST /api/v1/extract/rows/remove` `{ run_id, row_ids }` then preview again  
+5. `POST /api/v1/extract/excel` `{ run_id, selected_columns }` → Excel of **remaining** rows only  
 
 Uploaded files are parsed in a temp folder and deleted. Excel is streamed;
 only run **stats** are kept in Postgres for the dashboard.
