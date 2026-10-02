@@ -303,7 +303,8 @@ def build_excel_notebook_workbook(records: list[dict]) -> openpyxl.Workbook:
         cell.border = _BORDER; cell.alignment = _ALIGN_CENTER
 
     # ---- freeze panes & auto-filter -----------------------------------------
-    ws.freeze_panes = ws.cell(row=3, column=id_end + 1)
+    # Freeze rows 1-2 (header) only; columns A onwards scroll freely without locking
+    ws.freeze_panes = "A3"
     ws.auto_filter.ref = ws.cell(row=2, column=1).coordinate + ":" + \
                          ws.cell(row=2, column=total_cols).coordinate
 

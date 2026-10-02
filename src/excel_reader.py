@@ -58,6 +58,7 @@ Output record schema (per sheet):
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
 from pathlib import Path
@@ -215,9 +216,121 @@ _DATA_COL_MAP: dict[int, str] = {
 _STATS_LABELS = {"mean", "std dev", "count", "min", "max"}
 
 
-def _parse_sheet(ws, filename: str) -> dict[str, Any]:
-    """Parse a single worksheet into a record dict."""
+def _compute_stats(measurements: list[dict]) -> dict[str, dict]:
+    """Calculate mean, min, max, count, and std_dev across measurement rows."""
+    stats: dict[str, dict] = {
+        "mean": {}, "std_dev": {}, "count": {}, "min": {}, "max": {}
+    }
+    if not measurements:
+        return stats
 
+    col_values: dict[str, list[float]] = {}
+    for m in measurements:
+        for k, v in m.items():
+            if k in ("time", "batch", "Remarks", "Smell"):
+                continue
+            if isinstance(v, (int, float)):
+                col_values.setdefault(k, []).append(float(v))
+
+    for col, vals in col_values.items():
+        if not vals:
+            continue
+        n = len(vals)
+        mean_v = sum(vals) / n
+        stats["count"][col] = n
+        stats["min"][col] = round(min(vals), 2)
+        stats["max"][col] = round(max(vals), 2)
+        stats["mean"][col] = round(mean_v, 2)
+        if n > 1:
+            variance = sum((x - mean_v) ** 2 for x in vals) / (n - 1)
+            stats["std_dev"][col] = round(math.sqrt(variance), 2)
+        else:
+            stats["std_dev"][col] = 0.0
+
+    return stats
+
+
+def _parse_flat_sheet(ws, filename: str) -> dict[str, Any]:
+    """
+    Parse a sheet formatted as a flat tabular export (Row 1 headers, Row 2 sub-headers,
+    Row 3+ data rows with metadata repeated in columns 1-9).
+    """
+    # Extract rewinder from filename if present (e.g. 20260909W1 -> RW1)
+    m = re.search(r"(?:RW|W)[-_ ]*(\d+)", filename, re.IGNORECASE)
+    rewinder = f"RW{m.group(1)}" if m else ""
+
+    # Metadata from the first data row (row 3)
+    sales_order = _str(ws, 3, 1)
+    item_line   = _str(ws, 3, 2)
+    customer    = _str(ws, 3, 3)
+    date_raw    = _v(ws, 3, 4)
+    shift       = _str(ws, 3, 5)
+    grade_ply   = _str(ws, 3, 6)
+    combination = _str(ws, 3, 7)
+
+    # Date normalization
+    if hasattr(date_raw, "strftime"):
+        date_str = date_raw.strftime("%Y-%m-%d")
+    else:
+        date_s = str(date_raw).strip() if date_raw else ""
+        dm = re.match(r"(\d{2})[./-](\d{2})[./-](\d{4})", date_s)
+        if dm:
+            date_str = f"{dm.group(3)}-{dm.group(2)}-{dm.group(1)}"
+        else:
+            date_str = date_s
+
+    # In flat sheets, data columns are shifted right by 9 columns
+    flat_data_col_map = {col + 9: name for col, name in _DATA_COL_MAP.items()}
+
+    measurements: list[dict] = []
+    for row_idx in range(3, ws.max_row + 1):
+        # Time is col 10, batch is col 11
+        time_val = _v(ws, row_idx, 10)
+        batch_val = _v(ws, row_idx, 11)
+
+        # If time, batch, and col 1 are all None, row is empty
+        if time_val is None and batch_val is None and _v(ws, row_idx, 1) is None:
+            continue
+
+        if hasattr(time_val, "strftime"):
+            time_str = time_val.strftime("%H:%M")
+        else:
+            time_str = str(time_val).strip() if time_val else ""
+
+        mrow: dict[str, Any] = {
+            "time":  time_str,
+            "batch": str(batch_val).strip() if batch_val is not None else "",
+        }
+        for col, name in flat_data_col_map.items():
+            val = _to_num(_v(ws, row_idx, col))
+            if val is not None:
+                mrow[name] = val
+
+        if len(mrow) > 2:
+            measurements.append(mrow)
+
+    stats = _compute_stats(measurements)
+
+    return {
+        "file":             filename,
+        "sheet":            ws.title,
+        "sales_order":      sales_order,
+        "date":             date_str,
+        "shift":            shift,
+        "item_line":        item_line,
+        "customer":         customer,
+        "grade_quality_ply": grade_ply,
+        "combination":      combination,
+        "rewinder":         rewinder,
+        "specs":            {},
+        "measurements":     measurements,
+        "stats":            stats,
+        "row_id":           str(uuid.uuid4()),
+    }
+
+
+def _parse_standard_sheet(ws, filename: str) -> dict[str, Any]:
+    """Parse a standard sheet layout (header block in rows 6-12, specs in 14-16, data in 19+)."""
     # ---- header / identity info ----
     rewinder    = _str(ws, 6, 6)
     sales_order = _str(ws, 10, 3)
@@ -295,6 +408,10 @@ def _parse_sheet(ws, filename: str) -> dict[str, Any]:
         if len(mrow) > 2:
             measurements.append(mrow)
 
+    # Fallback: if stats block was absent in sheet, calculate stats from measurements
+    if not stats["mean"] and measurements:
+        stats = _compute_stats(measurements)
+
     return {
         "file":             filename,
         "sheet":            ws.title,
@@ -311,6 +428,15 @@ def _parse_sheet(ws, filename: str) -> dict[str, Any]:
         "stats":            stats,
         "row_id":           str(uuid.uuid4()),
     }
+
+
+def _parse_sheet(ws, filename: str) -> dict[str, Any]:
+    """Parse a single worksheet into a record dict, auto-detecting layout format."""
+    # Check if Row 1 has tabular headers like 'Sales Order No'
+    r1_val = _v(ws, 1, 1)
+    if r1_val and "sales order" in str(r1_val).lower():
+        return _parse_flat_sheet(ws, filename)
+    return _parse_standard_sheet(ws, filename)
 
 
 # ---------------------------------------------------------------------------
