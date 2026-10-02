@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import SessionLocal, init_db
-from app.routers import auth, dashboard, extract, health, users
+from app.routers import auth, dashboard, extract, health, notebooks, users
 from app.services.auth_service import seed_admin_if_needed
 
 
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     application.include_router(users.router)
     application.include_router(dashboard.router)
     application.include_router(extract.router)
+    application.include_router(notebooks.router)
     return application
 
 

@@ -203,3 +203,68 @@ class AdminDashboardResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     service: str
+
+
+# ---- Excel Notebook (Hard Roll Test Result) ----
+
+
+class NotebookParseErrorOut(BaseModel):
+    file: str
+    message: str
+
+
+class NotebookSpecValues(BaseModel):
+    TAR: float | int | str | None = None
+    MIN: float | int | str | None = None
+    MAX: float | int | str | None = None
+
+
+class NotebookPreviewRow(BaseModel):
+    row_id: str
+    file: str
+    sheet: str
+    sales_order: str = ""
+    date: str = ""
+    shift: str = ""
+    customer: str = ""
+    grade_quality_ply: str = ""
+    combination: str = ""
+    rewinder: str = ""
+    item_line: str = ""
+    measurement_count: int = 0
+    specs: dict[str, NotebookSpecValues] = Field(default_factory=dict)
+    stats_mean: dict[str, float | int | str] = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}
+
+
+class NotebookParseResponse(BaseModel):
+    run_id: str
+    files_total: int        # number of uploaded .xlsx files
+    files_ok: int           # number of successfully parsed sheets
+    files_failed: int
+    errors: list[NotebookParseErrorOut]
+    rows: list[NotebookPreviewRow]  # one per valid sheet
+
+
+class NotebookPreviewResponse(BaseModel):
+    run_id: str
+    total_rows: int
+    rows: list[NotebookPreviewRow]
+
+
+class NotebookRemoveRowsRequest(BaseModel):
+    run_id: str
+    row_ids: list[str] = Field(min_length=1, description="row_id values from parse/preview")
+
+
+class NotebookRemoveRowsResponse(BaseModel):
+    run_id: str
+    removed_count: int
+    remaining_count: int
+    remaining_row_ids: list[str]
+
+
+class NotebookDownloadRequest(BaseModel):
+    run_id: str
+    filename: str = "HardRoll_Combined.xlsx"
