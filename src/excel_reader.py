@@ -322,6 +322,7 @@ def _parse_flat_sheet(ws, filename: str) -> dict[str, Any]:
         "grade_quality_ply": grade_ply,
         "combination":      combination,
         "rewinder":         rewinder,
+        "shift_details":    [],
         "specs":            {},
         "measurements":     measurements,
         "stats":            stats,
@@ -340,6 +341,23 @@ def _parse_standard_sheet(ws, filename: str) -> dict[str, Any]:
     item_line   = _str(ws, 11, 3)
     customer    = _str(ws, 12, 3)
     combination = _str(ws, 12, 15)
+
+    # ---- shift personnel table (rows 11-12, cols 19/20/22/24) ---------------
+    # Row 10 cols 19/20/22/24 are labels: Shift / INSPECTOR / RW OPERATOR / SHIFT INCHARGE
+    # Row 11 = Shift A personnel, Row 12 = Shift C personnel (either or both may be present)
+    shift_details: list[dict] = []
+    for row_idx in (11, 12):
+        shift_label  = _str(ws, row_idx, 19).rstrip(": ").strip()  # normalise "A :" → "A"
+        inspector    = _str(ws, row_idx, 20)
+        operator     = _str(ws, row_idx, 22)
+        incharge     = _str(ws, row_idx, 24)
+        if shift_label:  # only add if shift letter is present
+            shift_details.append({
+                "shift":    shift_label,
+                "inspector": inspector,
+                "operator":  operator,
+                "incharge":  incharge,
+            })
 
     # normalise date
     if hasattr(date_raw, "strftime"):
@@ -423,6 +441,7 @@ def _parse_standard_sheet(ws, filename: str) -> dict[str, Any]:
         "grade_quality_ply": grade_ply,
         "combination":      combination,
         "rewinder":         rewinder,
+        "shift_details":    shift_details,
         "specs":            specs,
         "measurements":     measurements,
         "stats":            stats,

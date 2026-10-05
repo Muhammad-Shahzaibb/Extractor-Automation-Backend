@@ -46,12 +46,14 @@ _FILL_IDENTITY = PatternFill("solid", fgColor="2F5496")   # dark blue – identi
 _FILL_SPECS    = PatternFill("solid", fgColor="375623")   # dark green – specs
 _FILL_STATS    = PatternFill("solid", fgColor="7B3F00")   # dark brown – stats (mean/min/max)
 _FILL_COUNT    = PatternFill("solid", fgColor="4B4376")   # dark purple – count
+_FILL_SHIFT    = PatternFill("solid", fgColor="006666")   # dark teal  – shift personnel
 
 # sub-header fills (slightly lighter variants)
 _FILL_IDENTITY_SUB = PatternFill("solid", fgColor="4472C4")
 _FILL_SPECS_SUB    = PatternFill("solid", fgColor="70AD47")
 _FILL_STATS_SUB    = PatternFill("solid", fgColor="C55A11")
 _FILL_COUNT_SUB    = PatternFill("solid", fgColor="7030A0")
+_FILL_SHIFT_SUB    = PatternFill("solid", fgColor="008080")  # teal sub
 
 # data fills
 _FILL_DATA_ODD  = PatternFill("solid", fgColor="F2F7FF")
@@ -157,6 +159,18 @@ def _collect_stat_columns(records: list[dict]) -> list[str]:
 # Main builder
 # ---------------------------------------------------------------------------
 
+def _collect_shift_labels(records: list[dict]) -> list[str]:
+    """Return sorted unique shift labels found across all records (e.g. ['A', 'C'])."""
+    seen: set[str] = set()
+    for rec in records:
+        for sd in rec.get("shift_details", []):
+            lbl = sd.get("shift", "").strip()
+            if lbl:
+                seen.add(lbl)
+    # Sort: digits first, then letters (A, B, C …)
+    return sorted(seen)
+
+
 def build_excel_notebook_workbook(records: list[dict]) -> openpyxl.Workbook:
     """
     Build and return an openpyxl Workbook from parsed Excel-notebook records.
@@ -168,8 +182,9 @@ def build_excel_notebook_workbook(records: list[dict]) -> openpyxl.Workbook:
       - STATS block  (Mean / Min / Max / StdDev / Count per measurement col)
       - Measurement count column
     """
-    spec_cols = _collect_spec_columns(records)
-    stat_cols = _collect_stat_columns(records)
+    spec_cols    = _collect_spec_columns(records)
+    stat_cols    = _collect_stat_columns(records)
+    shift_labels = _collect_shift_labels(records)   # e.g. ['A', 'C']
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -190,6 +205,29 @@ def build_excel_notebook_workbook(records: list[dict]) -> openpyxl.Workbook:
         ws.column_dimensions[get_column_letter(col)].width = width
         col += 1
     id_end = col - 1
+
+    # --- Shift Personnel group (one sub-group per shift, 3 sub-cols each) ---
+    # Sub-cols: Inspector | Operator | Incharge
+    _SHIFT_SUB_COLS = [("inspector", "Inspector", 14),
+                       ("operator",  "Operator",  14),
+                       ("incharge",  "Incharge",  14)]
+    shift_group_start = col
+    # shift_col_positions[shift_label][field] = column_number
+    shift_col_positions: dict[str, dict[str, int]] = {}
+    for lbl in shift_labels:
+        shift_col_positions[lbl] = {}
+        group_label = f"Shift {lbl} Personnel"
+        group_col_start = col
+        for field_key, sub_label, width in _SHIFT_SUB_COLS:
+            shift_col_positions[lbl][field_key] = col
+            ws.cell(row=2, column=col, value=sub_label)
+            ws.column_dimensions[get_column_letter(col)].width = width
+            col += 1
+        # Row 1: merged group label
+        ws.cell(row=1, column=group_col_start, value=group_label)
+        ws.merge_cells(start_row=1, start_column=group_col_start,
+                       end_row=1, end_column=col - 1)
+    shift_group_end = col - 1
 
     # --- SPECS group ---
     spec_start = col
@@ -238,6 +276,11 @@ def build_excel_notebook_workbook(records: list[dict]) -> openpyxl.Workbook:
         for r in (1, 2):
             _apply_style(ws.cell(row=r, column=c), _FILL_IDENTITY if r == 1 else _FILL_IDENTITY_SUB)
 
+    if shift_labels:
+        for c in range(shift_group_start, shift_group_end + 1):
+            _apply_style(ws.cell(row=1, column=c), _FILL_SHIFT)
+            _apply_style(ws.cell(row=2, column=c), _FILL_SHIFT_SUB)
+
     if spec_cols:
         for c in range(spec_start, spec_end + 1):
             _apply_style(ws.cell(row=1, column=c), _FILL_SPECS)
@@ -272,6 +315,16 @@ def build_excel_notebook_workbook(records: list[dict]) -> openpyxl.Workbook:
             cell.fill   = fill
             cell.border = _BORDER
             cell.alignment = _ALIGN_LEFT if i < 3 else _ALIGN_CENTER
+
+        # shift personnel
+        sd_by_shift = {sd["shift"]: sd for sd in rec.get("shift_details", [])}
+        for lbl in shift_labels:
+            sd = sd_by_shift.get(lbl, {})
+            for field_key, _, _ in _SHIFT_SUB_COLS:
+                c = shift_col_positions[lbl][field_key]
+                cell = ws.cell(row=row_num, column=c, value=sd.get(field_key, "") or "")
+                cell.font = _FONT_DATA; cell.fill = fill
+                cell.border = _BORDER; cell.alignment = _ALIGN_CENTER
 
         # specs
         for spec_name in spec_cols:
