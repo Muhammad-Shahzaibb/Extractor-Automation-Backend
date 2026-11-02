@@ -35,6 +35,7 @@ IDENTITY_FIELDS = [
     ("MatCode", ["Material Code", "Mat. Code", "Mat Code"]),
     ("Color", ["Color", "Colour"]),
     ("Ply", ["Ply"]),
+    ("Date", ["Effective date", "Effective Date"]),
 ]
 
 

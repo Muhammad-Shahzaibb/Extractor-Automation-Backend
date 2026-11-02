@@ -20,6 +20,7 @@ from .extractor import clean_param_value
 
 IDENTITY_HEADERS = [
     ("SpecNo", "Spec. No."),
+    ("Date", "Date"),
     ("Client", "Client"),
     ("Quality", "Quality"),
     ("Grade", "Grade"),
@@ -109,10 +110,10 @@ def build_workbook(records, selected_columns, sort_by="SpecNo"):
             cell.font = DATA_FONT
             cell.fill = DATA_FILL
             cell.border = BORDER
-            cell.alignment = LEFT if c in (2, 3, 4, 5) else CENTER
+            cell.alignment = LEFT if c in (3, 4, 5, 6) else CENTER
 
     # ---- column widths / freeze panes ----
-    widths = {1: 16, 2: 18, 3: 22, 4: 12, 5: 16, 6: 8, 7: 6}
+    widths = {1: 16, 2: 14, 3: 18, 4: 22, 5: 12, 6: 16, 7: 8, 8: 6}
     for c, w in widths.items():
         ws.column_dimensions[get_column_letter(c)].width = w
     for c in range(group_start_col, total_cols + 1):

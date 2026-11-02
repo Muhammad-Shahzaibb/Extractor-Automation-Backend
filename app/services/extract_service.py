@@ -269,6 +269,7 @@ def build_preview(
                 "row_id": rec.get("row_id", ""),
                 "file": rec.get("file", ""),
                 "SpecNo": rec.get("SpecNo", ""),
+                "Date": rec.get("Date", ""),
                 "Client": rec.get("Client", ""),
                 "Quality": rec.get("Quality", ""),
                 "Grade": rec.get("Grade", ""),

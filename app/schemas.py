@@ -89,6 +89,7 @@ class RecordOut(BaseModel):
     row_id: str = ""
     file: str
     SpecNo: str = ""
+    Date: str = ""
     Client: str = ""
     Quality: str = ""
     Grade: str = ""
@@ -128,6 +129,7 @@ class PreviewRow(BaseModel):
     row_id: str
     file: str
     SpecNo: str = ""
+    Date: str = ""
     Client: str = ""
     Quality: str = ""
     Grade: str = ""
